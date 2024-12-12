@@ -1,0 +1,61 @@
+from flask import Flask, request, jsonify
+import threading
+import pyaudio
+import wave
+
+app = Flask(__name__)
+
+# Global variables
+is_recording = False
+record_thread = None
+
+def record_audio(output_filename="output.wav"):
+    global is_recording
+    chunk = 1024
+    format = pyaudio.paInt16
+    channels = 1
+    rate = 44100
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=format, channels=channels, rate=rate, input=True, frames_per_buffer=chunk)
+
+    frames = []
+
+    print("Recording started...")
+    while is_recording:
+        data = stream.read(chunk)
+        frames.append(data)
+
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+
+    wf = wave.open(output_filename, 'wb')
+    wf.setnchannels(channels)
+    wf.setsampwidth(p.get_sample_size(format))
+    wf.setframerate(rate)
+    wf.writeframes(b''.join(frames))
+    wf.close()
+    print(f"Recording saved to {output_filename}")
+
+@app.route('/start', methods=['GET'])
+def start_recording():
+    global is_recording, record_thread
+    if not is_recording:
+        is_recording = True
+        record_thread = threading.Thread(target=record_audio, args=("output.wav",))
+        record_thread.start()
+        return jsonify({"status": "Recording started"}), 200
+    return jsonify({"status": "Already recording"}), 400
+
+@app.route('/stop', methods=['GET'])
+def stop_recording():
+    global is_recording, record_thread
+    if is_recording:
+        is_recording = False
+        record_thread.join()
+        return jsonify({"status": "Recording stopped"}), 200
+    return jsonify({"status": "Not recording"}), 400
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)  # Accessible over LAN/WAN
